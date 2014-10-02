@@ -1,0 +1,107 @@
+#!/usr/bin/python
+
+import time
+import grp
+from pwd import getpwnam
+import os
+import logging
+import sys
+import getopt
+from multiprocessing import Pipe, Process
+import threading
+from forwarding import ForwardingManager
+from iptables import IPTablesManager
+
+logging.basicConfig(filename='/dev/stdout', filemode='w+',
+                    level=logging.DEBUG)
+log = logging.getLogger("Forwarding Manager")
+
+
+class ManagerMethods(object):
+
+    def setup_forwarding(self, dst, dport, src, sport):
+        IPTablesManager().setup_forwarding(dst, dport, src, sport)
+
+    def discover(self):
+        print "discover My Kuki"
+
+    def remove(self):
+        print "remove My Kuki"
+
+
+def main(sockfile, user, group, pidfile=None):
+    log = logging.getLogger("Forwarding Manager")
+
+    def bind(func):
+        def wrapper(ManagerMethods, *args, **kwargs):
+            return func(*args, **kwargs)
+        return wrapper
+
+    try:
+        if os.geteuid() != 0:
+            log.error("This process has to run under root!")
+            sys.exit(errno.EPERM)
+
+        address = sockfile
+
+        log.debug("Cleaning old socket %s", address)
+        if os.path.exists(address):
+            os.unlink(address)
+
+        try:
+            manager = ForwardingManager(address=address, authkey='')
+            manager.register('instance', callable=ManagerMethods)
+
+            server = manager.get_server()
+            servThread = threading.Thread(target=server.serve_forever)
+            servThread.setDaemon(True)
+            servThread.start()
+
+            os.chown(address, getpwnam(user).pw_uid,
+                     grp.getgrnam(group)[2])
+
+            log.debug("Started serving manager object")
+            while True:
+                time.sleep(3)
+
+        finally:
+            if os.path.exists(address):
+                os.remove(address)
+
+    except Exception:
+        log.error("Could not start", exc_info=True)
+        sys.exit(1)
+
+
+def _usage():
+    print "Usage:  forwardingManager --sockfile=fullPath --user=user" \
+          "--group=group"
+
+
+def _parse_args():
+    argDict = {}
+    opts, args = getopt.getopt(sys.argv[1:], "h", ["sockfile=",
+                                                   "user=",
+                                                   "group="])
+    for o, v in opts:
+        o = o.lower()
+        if o == "--sockfile":
+            argDict['sockfile'] = v
+        elif o == "--user":
+            argDict['user'] = v
+        elif o == "--group":
+            argDict['group'] = v
+        else:
+            _usage()
+            sys.exit(1)
+
+    if 'sockfile' not in argDict:
+        _usage()
+        sys.exit(1)
+
+    return argDict
+
+
+if __name__ == '__main__':
+    argDict = _parse_args()
+    main(**argDict)
