@@ -1,4 +1,4 @@
-#from nova import utils
+import sys
 import logging
 from multiprocessing.managers import BaseManager, RemoteError
 

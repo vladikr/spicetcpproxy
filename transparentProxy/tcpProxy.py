@@ -1,4 +1,5 @@
 import multiprocessing
+import pyroute2
 import select
 import SimpleHTTPServer
 import socket
@@ -27,8 +28,7 @@ class ReservedPorts(object):
 
     def __init__(self):
         self.__cached_ports = {}
-        #proxy = Forwarding().get_instance()
-        #proxy.discover()
+        proxy = Forwarding().get_instance()
 
     def reserve(self, port, socket):
         self.__cached_ports[port] = socket
@@ -38,6 +38,15 @@ class ReservedPorts(object):
 
     def get_all_items(self):
         return self.__cached_ports.iteritems()
+
+    def refresh_ports():
+        active_ports = [entry for entry in psutil.net_connections()
+                        if entry.status != 'NONE']
+        for item in self.__cached_ports.iteritems():
+            socc_obj = [entry for entry in active_ports
+             if entry.laddr == (str(item[1].getsockname()[0]), item[0])]
+            if not socc_obj:
+                self.remove_port(item[0])
 
 
 class HTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
@@ -56,17 +65,23 @@ class HTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
             listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             listen_ip = self.request.getsockname()[0]
             listen_sock.bind((listen_ip, 0))
-            reserved_port = listen_sock.getsockname()[1]
+            incoming_port_num = listen_sock.getsockname()[1]
+            ip = pyroute2.IProute()
+            outgoing_ip = ip.get_routes(family=socket.AF_INET,
+                                        dst=dest_host)[0]['attr'][3][1]
+            outgoing_sock.bind((outgoing_ip, 0))
+            outgoing_port = outgoing_sock.getsockname()[1]
             proxy = Forwarding().get_instance()
             proxy.setup_forwarding(dest_host, dest_port,
-                                   listen_ip, reserved_port)
+                                   listen_ip, incoming_port_num,
+                                   outgoing_ip)
             reserved_port = ReservedPorts.get_instance()
-            reserved_port.reserve(reserved_port, listen_sock)
+            reserved_port.reserve(reserved_port_num, listen_sock)
 
             #TODO: respond with the reserved port
             self.wfile.write(self.protocol_version +
                              ' 200 Connection established - port: %s\n'
-                             % reserved_port)
+                             % reserved_port_num)
         except Exception as exp:
             self.send_response(500)
             self.end_headers()
@@ -80,27 +95,32 @@ class ProcessingTCPSocketServer(SocketServer.ThreadingMixIn,
 
 class PeriodicCleanup(threading.Thread):
 
-    PERIODIC_INTERVAL = 10
+    LOG = logging.getLogger("PeriodicCleanup")
+
+    PERIODIC_INTERVAL = 1
 
     def __init__(self):
         threading.Thread.__init__(self)
-        self._log = log
+        self._log = LOG
         self.stopRunning = threading.Event()
 
     def is_port_active(port):
         pass
 
     def run(self):
+        self.stopRunning.set()
         try:
-            time.sleep(PERIODIC_INTERVAL)
+            LOG.info('Start')
+            #time.sleep(PERIODIC_INTERVAL)
+            LOG.info('After Sleep')
             while not self.stopRunning.isSet():
                 try:
                     reserved_ports = ReservedPorts.get_instance()
-                    for port in reserved_port.get_all_items():
-                        pass
+                    LOG.info(reserved_ports.get_all_items())
+                    #reserved_ports.refresh_ports()
                 except:
                     pass
-            self.stopRunning.wait(PERIODIC_INTERVAL)
+                self.stopRunning.wait(PERIODIC_INTERVAL)
         except:
             pass
 
@@ -113,5 +133,5 @@ if __name__ == "__main__":
     Handler = HTTPRequestHandler
     server = ProcessingTCPSocketServer((HOST, PORT), Handler)
     ip, port = server.server_address
-    #PeriodicCleanup().start()
+    PeriodicCleanup().start()
     server.serve_forever()

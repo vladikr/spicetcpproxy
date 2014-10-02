@@ -18,7 +18,7 @@ class IPTablesManager(object):
     def _setup_dnat(self, protocol, dst, dport, src, sport):
         rule = iptc.Rule()
         rule.protocol = protocol
-        rule.dst = str(src)
+        rule.dport = str(sport)
         match = iptc.Match(rule, protocol)
         match.dport = sport
         rule.add_match(match)
@@ -26,8 +26,9 @@ class IPTablesManager(object):
         target.to_destination = "%s:%s" % (dst, dport)
         rule.target = target
         self.pre_route_chain.insert_rule(rule)
+        return rule
 
-    def _setup_snat(self, protocol, dst, dport, src, sport):
+    def _setup_snat(self, protocol, dst, src):
         rule = iptc.Rule()
         rule.protocol = protocol
         rule.src = str(dst)
@@ -35,41 +36,36 @@ class IPTablesManager(object):
         match.sport = dport
         rule.add_match(match)
         target = iptc.Target(rule, "SNAT")
-        target.to_source = "%s:%s" % (src, sport)
+        target.to_source = "%s" % (src)
         rule.target = target
         self.post_route_chain.insert_rule(rule)
+        return rule
 
     def _setup_forward(self, dst, dport, src, sport, protocol):
         rule = iptc.Rule()
-        print "I got dst: %s" % dst
         rule.dst = str(dst)
         rule.dport = dport
         rule.protocol = protocol
-        target = iptc.Target(rule, "ACCEPT")
-        match = iptc.Match(rule, "state")
-        match.state = "NEW,ESTABLISHED,RELATED"
-        rule.add_match(match)
-        match1 = iptc.Match(rule, protocol)
-        match1.dport = dport
-        rule.add_match(match1)
-        rule.target = target
         self.forward_chain.insert_rule(rule)
 
-    def setup_forwarding(self, dst, dport, src, sport, protocol='tcp'):
-        print 'dst: %s, dport: %s, src: %s, sport: %s' % (dst, dport,
-                                                          src, sport)
+    def setup_forwarding(self, dest_ip, dest_port,
+                               incoming_ip, incoming_port,
+                               outgoing_ip,
+                               protocol='tcp'):
         try:
-            self._setup_dnat(protocol, dst, str(dport), src, str(sport))
-            self._setup_forward(dst, str(dport), src, str(sport), protocol)
-            self._setup_snat(protocol, dst, str(dport), src, str(sport))
+            # incoming to host
+            dnat_rule = self._setup_dnat(protocol, dest_ip, str(dest_port),
+                                         incoming_ip, str(incoming_port))
+            snat_rule = self._setup_snat(protocol, dest_ip, outgoing_ip)
+            self._setup_forward(dest_ip, str(dest_port), incoming_ip,
+                                str(incoming_port), protocol)
             self.nat_table.commit()
             self.filter_table.commit()
         except Exception as exp:
             self.log.error('failed - %s' % exp, exc_info=True)
             raise
-#
-#        rules = chain.rules
-#        for rule in rules:
-#            chain.delete_rule(rule)
-#        table.commit()
-#        table.close()
+
+    def discover(self):
+        rules = self.pre_route_chain.rules
+        for rule in rules:
+            return rule
