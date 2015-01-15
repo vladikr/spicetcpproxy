@@ -4,7 +4,6 @@ import select
 import SimpleHTTPServer
 import socket
 import SocketServer
-from gluesockets import gluesockets
 import logging
 import sys
 from forwarding import Forwarding
@@ -63,25 +62,26 @@ class HTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
         try:
             listen_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            outgoing_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             listen_ip = self.request.getsockname()[0]
             listen_sock.bind((listen_ip, 0))
-            incoming_port_num = listen_sock.getsockname()[1]
-            ip = pyroute2.IProute()
+            incoming_port = listen_sock.getsockname()[1]
+            ip = pyroute2.IPRoute()
             outgoing_ip = ip.get_routes(family=socket.AF_INET,
-                                        dst=dest_host)[0]['attr'][3][1]
+                                        dst=dest_host)[0]['attrs'][3][1]
             outgoing_sock.bind((outgoing_ip, 0))
             outgoing_port = outgoing_sock.getsockname()[1]
             proxy = Forwarding().get_instance()
             proxy.setup_forwarding(dest_host, dest_port,
-                                   listen_ip, incoming_port_num,
+                                   listen_ip, incoming_port,
                                    outgoing_ip)
             reserved_port = ReservedPorts.get_instance()
-            reserved_port.reserve(reserved_port_num, listen_sock)
+            reserved_port.reserve(incoming_port, listen_sock)
 
             #TODO: respond with the reserved port
             self.wfile.write(self.protocol_version +
                              ' 200 Connection established - port: %s\n'
-                             % reserved_port_num)
+                             % incoming_port)
         except Exception as exp:
             self.send_response(500)
             self.end_headers()
