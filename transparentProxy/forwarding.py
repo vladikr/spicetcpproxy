@@ -49,7 +49,7 @@ class Forwarding(object):
 
     def _connect(self):
         self._manager = ForwardingManager(address="/tmp/fmanager.sock",
-                                          authkey='')
+                                          authkey='foo')
         self._manager.register('instance')
         self._manager.register('open')
         self._log.debug("Trying to connect forwarding manager")

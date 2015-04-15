@@ -7,6 +7,7 @@ import os
 import logging
 import sys
 import getopt
+import errno
 from multiprocessing import Pipe, Process
 import threading
 from forwarding import ForwardingManager
@@ -49,7 +50,7 @@ def main(sockfile, user, group, pidfile=None):
             os.unlink(address)
 
         try:
-            manager = ForwardingManager(address=address, authkey='')
+            manager = ForwardingManager(address=address, authkey='foo')
             manager.register('instance', callable=ManagerMethods)
 
             server = manager.get_server()

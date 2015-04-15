@@ -53,9 +53,7 @@ class HTTPRequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
     def do_GET(self):
         try:
-            pos = self.path.rfind(':')
-            dest_host = self.path[:pos]
-            dest_port = int(self.path[pos + 1:])
+            (dest_host, dest_port) = self.path.lstrip('/').split(':')
         except Exception:
             self.send_response(400)
             self.end_headers()
